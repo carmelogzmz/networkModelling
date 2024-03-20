@@ -1,71 +1,88 @@
-network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, interactions = 240, perc_conserved = 40, perc_rewiring = 80, sp_turnover = 10) {
+# network_builder function
 
-  con <- round((interactions*perc_conserved)/100) # interacciones conservadas
-  cha <- interactions-con # itneraccioens que cambian
-  rew <- round((cha*perc_rewiring)/100) # interacciones que cambian por rewiring
-  tur <- cha-rew # interacciones que cambian por turnover
-  sha <- con+rew # interacciones en la red compartida (conservadas y rewiring)
+# INFO
+# Author: Carmelo Gomez-Martinez
+# Last update: 21/03/2024
+# contact: carmelogzmz@gmail.com
 
-  # comprobando que la red se puede construir
-  int_tur <- sp_turnover * sp_turnover # número de celdillas que comparten las especies no compartidas entre ellas
-  tot <- 2*(sp_turnover * sp_num) # número de celdillas que involucran a las especies no compartidas y el resto de la red
-  resto <- tot-int_tur # número de celdillas que involucran a las especies no compartidas y el resto de la red, corregido
+# DESCRIPTION
+# This function build a pair of networks with a defined structure according to the following parameters:
+# sp_num: number of species in each trophic level (if 100, each network will have 100 rows and 100 columns)
+# sp_unique: number of species unique of each network. if sp_num = 100 and sp_unique = 50, 150 species will be shared
+#            between network, and 50 will be unique of each network.
+# sp_inis: number of species that occur in each community not interacting in its network but in the other. If sp_inis = 10,
+#          in community at time 1 will be 10 species that interact in network 2 but not in network 1.
+# interactions: number of interactions (qualitative) in each network. If 1000, a thousand cells will be filled with "1".
+# perc_conserved: the percentage of interactions that will be conserved (shared) between networks. If 50, the 50% of
+#                 the interactions in network 1 will be also in network 2.
+# perc_rewiring: from the percentage of interactions changes (100-perc_conserved), perc_rewiring is the percentage of
+#                interactions changes due to rewiring. If perc_conserved = 50 and perc_rewiring = 80, the 80% of the
+#                50% of the total interactions will be unique of each network but involving shared species. The rest
+#                (20% in this example), will be interactions involving unique species of each network.
 
-  if(resto < tur) {
-    stop("Hay más interacciones que celdas posibles en la red no compartida. Disminuye el porcentaje de interaccioens que se deben a species turnover o aumenta el número de sp_turnover")
+# OUTPUT
+# The function return a 4-items list, with items 1 and 2 being network at time 1 and at time 2, respectively, and
+# items 3 and 4 the list of the species in the community at time 1 and at time 2, respectively.
+
+# CODE
+network_builder <- function(sp_num = 100, sp_unique = 50, sp_inis = 10, interactions = 1000, perc_conserved = 50, perc_rewiring = 80) {
+
+  build_comm <- function(sp_num = 100, trophic, start = 1) {
+    if(sp_num < 2 || sp_num > 999) {
+      stop("sp_num must be a number between 2 and 999")
+    }
+    else {
+      species <- NULL
+      for(i in 1:sp_num) {
+        if(i+start-1 < 10) {
+          species <- c(species, paste0(trophic,"_00",i+start-1))
+        }
+        else if(i+start-1 >= 10 && i+start-1 < 100) {
+          species <- c(species, paste0(trophic,"_0",i+start-1))
+        }
+        else {
+          species <- c(species, paste0(trophic,"_",i+start-1))
+        }
+      }
+      return(species)
+    }
   }
-  if(tur < sp_turnover*2) {
-    stop("El porcentaje de interaction turnover debido a species turnover es demasiado bajo de acuerdo al número de interacciones total de la red, debes aumentar el numero de interacciones o disminuir el numero de sp_turnover")
+
+  con <- round((interactions*perc_conserved)/100) # conserved interactions
+  cha <- interactions-con # interaction changes
+  rew <- round((cha*perc_rewiring)/100) # interactions changes due to rewiring
+  tur <- cha-rew # interaction changes due to turnover
+  sha <- con+rew # interactions in the shared subnetwork (conserved and rewired)
+  sp_shared <- sp_num - round(sp_unique/2, 0)
+  cells_shared <- sp_shared*sp_shared
+  cells_rew <- (cells_shared - con)/2
+
+  if(tur < round(sp_unique/2, 0)) {
+    stop("Not enough interactions due to species turnover. Decrease the number of unique species or increase the number of interactions")
+  } else if(cells_rew < rew) {
+    stop("Not enough cells for rewiring efficiently. Decrease sp_unique or interactions")
+  } else {
+    print("Correct parameters. Networks can be built")
   }
 
-  # aleatoriza el número de especies que cambiará de insectos y plantas de acuerdo al total de especies a cambiar definido por "sp_turnover"
-  inturnover <- sample(0:sp_turnover, 1)
-  if(inturnover == 0) { print("NOTE: No insect species turnover") }
-  plturnover <- sp_turnover - inturnover
-  if(plturnover == 0) { print("NOTE: No plant species turnover") }
+  inturnover <- round(sp_unique/2, 0)
+  plturnover <- sp_unique-inturnover
 
-  # crea la lista de especies de plantas e insectos que habrá en la red 1 a partir de las comunidades incluidas en "lower" y "upper"
-  plants_n1 <- sort(sample(lower, sp_num, replace = FALSE)) # extraigo 20 especies al azar de la comunidad
-  insects_n1 <- sort(sample(upper, sp_num, replace = FALSE)) # extraigo 20 especies al azar de la comunidad
+  plants_n1 <- build_comm(sp_num, "plant", 1)
+  insects_n1 <- build_comm(sp_num, "insect", 1)
 
-  # crea la lista de especies de plantas que habrá en la red 2 a partir de la lista de plantas de la red 1, eliminando aleatoriamente el numero de plantas definido por plturnover
   plants_n2 <- plants_n1
-  if(plturnover != 0) {
-    plextract <- sample(seq_along(plants_n2), plturnover, replace = FALSE)
-    plants_n2 <- plants_n2[-plextract]
-  } else {
-    print("plturnover es 0")
-  }
-  while(plturnover != 0) {
-    sp <- sample(lower, 1)
-    if(!sp %in% plants_n2 && !sp %in% plants_n1) {
-      plants_n2 <- c(plants_n2, sp)
-      plturnover <- plturnover - 1
-    }
-  }
+  plants_n2 <- plants_n2[1:(length(plants_n2) - plturnover)]
+  shared_pl <- plants_n2
+  plants_n2 <- c(plants_n2, build_comm(plturnover, "plant", sp_num+1))
 
-  # crea la lista de especies de insectos que habrá en la red 2 a partir de la lista de insectos de la red 1, eliminando aleatoriamente el numero de insects definido por inturnover
   insects_n2 <- insects_n1
-  if(inturnover != 0) {
-    inextract <- sample(seq_along(insects_n2), inturnover, replace = FALSE)
-    insects_n2 <- insects_n2[-inextract]
-  } else {
-    print("inturnover es 0")
-  }
-  while(inturnover != 0) {
-    sp <- sample(upper, 1)
-    if(!sp %in% insects_n2 && !sp %in% insects_n1) {
-      insects_n2 <- c(insects_n2, sp)
-      inturnover <- inturnover - 1
-    }
-  }
+  insects_n2 <- insects_n2[1:(length(insects_n2) - inturnover)]
+  shared_in <- insects_n2
+  insects_n2 <- c(insects_n2, build_comm(inturnover, "insect", sp_num+1))
 
-  # Define las especies compartidas en ambas redes
-  shared_pl <- plants_n1[plants_n1 %in% plants_n2]
-  shared_in <- insects_n1[insects_n1 %in% insects_n2]
-
-  # Crea la red 1 compartida y la rellena con el número de interacciones designado en "con" (que es el que corresponde el porcentaje determinado en "int_conserved")
-  network_1 <- matrix(0, nrow = length(shared_pl), ncol = length(shared_in), dimnames = list(shared_pl,shared_in)) # monto la matriz
+  # Creating the shared subnetwork 1 and fill it with the number of interactions designated by "con" (% of conserved interactions)
+  network_1 <- matrix(0, nrow = length(shared_pl), ncol = length(shared_in), dimnames = list(shared_pl,shared_in))
   x <- con
   while(x != 0) {
     i <- sample(seq_len(nrow(network_1)), 1)
@@ -75,12 +92,11 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
       x <- x - 1
     }
   }
-  sum(network_1)
-  # Copio en la red 2 para que las compartan
+
+  # Copying network_1 to network_2 (conserved interactions)
   network_2 <- network_1
 
-  # Crea la red 1 compartida y la rellena con el número de interacciones definidas por "rew"
-
+  # Adding to network_1 the interactions designated by "rew" (% of interactions due to rewiring)
   continue <- "NO"
   while(continue == "NO") {
     net <- network_1
@@ -92,7 +108,7 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         x <- x - 1
       }
     }
-    print(x)
+
     for(j in 1:ncol(net)) {
       if(colSums(net)[j] == 0) {
         i <- sample(seq_len(nrow(net)), 1)
@@ -100,8 +116,8 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         x <- x - 1
       }
     }
-    print(x)
-    while(x != 0) {
+
+    while(x > 0) {
       i <- sample(seq_len(nrow(net)), 1)
       j <- sample(seq_len(ncol(net)), 1)
       if(net[i,j] == 0) {
@@ -109,18 +125,15 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         x <- x - 1
       }
     }
-    print(x)
+
     if(!0 %in% colSums(net) && !0 %in% rowSums(net) && sum(net) == sha) {
       continue <- "YES"
       network_1 <- net
-      print(paste0("Interacciones de la red 1 compartida: ", sum(network_1)))
     }
   }
 
-  # Crea la red 2 compartida y la rellena con el número de interacciones definidas por "rew". Primero rellena
-  # interacciones en las especies que no interactuaban en la red 1, y después coloca las demás de forma aleatoria.
-  # Estos dos bucles for rellenan interacciones en las especies que no interactuaban en la red 1 (primer bucle plantas, segundo bucle insectos)
-
+  # Adding to network_2 the interactions designated by "rew" (% of interactions due to rewiring)
+  # First fill interactions in the species not interacting in network_1, after that fill them randomly.
   continue <- "NO"
   while(continue == "NO") {
     net <- network_2
@@ -138,7 +151,7 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         }
       }
     }
-    print(x)
+
     for(j in 1:ncol(net)) {
       if(colSums(net)[j] == 0) {
         next_j <- "NO"
@@ -152,7 +165,7 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         }
       }
     }
-    print(x)
+
     while(x != 0) {
       i <- sample(seq_len(nrow(net)), 1)
       j <- sample(seq_len(ncol(net)), 1)
@@ -161,27 +174,23 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
         x <- x - 1
       }
     }
-    print(x)
+
     if(!0 %in% colSums(net) && !0 %in% rowSums(net) && sum(net) == sha) {
       continue <- "YES"
       network_2 <- net
-      print(paste0("Interacciones de la red 2 compartida: ", sum(network_2)))
     }
   }
 
   shared_rew <- sum(abs(network_2-network_1))
   shared_total <- sum(sum(network_1), sum(network_2))
-  if(shared_rew == (sha+sha-con-con)) { print("Redes compartidas bien construidas") }
+  if(shared_rew == (sha+sha-con-con)) { print("Well built networks") }
   # extraer las especies únicas de cada red y nivel trofico
-  unique_pl1 <- plants_n1[!plants_n1 %in% plants_n2]
-  unique_in1 <- insects_n1[!insects_n1 %in% insects_n2]
-  unique_pl2 <- plants_n2[!plants_n2 %in% plants_n1]
-  unique_in2 <- insects_n2[!insects_n2 %in% insects_n1]
+  unique_pl1 <- plants_n1[(length(plants_n1)-plturnover+1):length(plants_n1)]
+  unique_in1 <- insects_n1[(length(insects_n1)-inturnover+1):length(insects_n1)]
+  unique_pl2 <- plants_n2[(length(plants_n2)-plturnover+1):length(plants_n2)]
+  unique_in2 <- insects_n2[(length(insects_n2)-inturnover+1):length(insects_n2)]
 
-  dim(network_1); sum(network_1)
-  dim(network_2); sum(network_2)
-
-  # Añado las especies nuevas en la red 1 y relleno tantas interacciones como marca el valor "tur" (int_turnover)
+  # Adding the unique species of network_1 and the interactions designated by "tur" (percentage of interactions due to species turnover)
   if(length(unique_pl1) != 0) {
     x <- rep(0, ncol(network_1))
     for(i in seq_along(unique_pl1)) {
@@ -210,62 +219,76 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
     colnames(network_1) <- columnas
   }
 
+  res <- tur
   size <- nrow(network_1)-length(unique_pl1)
   if(size < nrow(network_1)) {
     size1 <- ((size+1):nrow(network_1))
     for(k in size1) {
       i <- k
-      j <- sample(seq_len(ncol(network_1)), 1)
-      network_1[i,j] <- 1
+      continue <- "NO"
+      while(continue == "NO") {
+        j <- sample((ncol(network_1)-length(unique_in1)+1):ncol(network_1), 1)
+        if(sum(network_1[,j]) == 0) {
+          network_1[i,j] <- 1
+          continue <- "YES"
+          res <- res - 1
+        }
+      }
     }
   } else { size1 <- NULL }
 
   size <- ncol(network_1)-length(unique_in1)
+  colsum <- colSums(network_1)[(size+1):100]
+  pos <- NULL
+  if(0 %in% colsum) {
+    pos <- which(colsum == 0)
+  }
   if(size < ncol(network_1)) {
     size2 <- ((size+1):ncol(network_1))
-    for(k in size2) {
-      j <- k
-      l <- 1
-      while(l == 1) {
-        i <- sample(seq_len(nrow(network_1)), 1)
-        if(network_1[i,j] == 0){
-          network_1[i,j] <- 1
-          l <- 0
+    if(!is.null(pos)) {
+      continue <- "NO"
+      while(res > 0 || continue == "NO") {
+        for(k in pos) {
+          j <- k
+          l <- 1
+          while(l == 1) {
+            i <- sample(seq_len(nrow(network_1)), 1)
+            if(network_1[i,j] == 0){
+              network_1[i,j] <- 1
+              l <- 0
+              res <- res - 1
+            }
+          }
+          if(res == 0) {
+            break
+          }
         }
+        continue <- "YES"
+      }
+    }
+    continue <- "NO"
+    while(res > 0 || continue == "NO") {
+      for(k in size2) {
+        j <- sample(size2, 1)
+        l <- 1
+        while(l == 1) {
+          i <- sample(seq_len(nrow(network_1)), 1)
+          if(network_1[i,j] == 0){
+            network_1[i,j] <- 1
+            l <- 0
+            res <- res - 1
+          }
+        }
+        if(res == 0) {
+          break
+        }
+        continue <- "YES"
       }
     }
   } else { size2 <- NULL }
-  dim(network_1); sum(network_1)
 
-  x <- tur-length(size1)-length(size2)
-  while(x != 0) {
-    sel <- sample(c("i","j"), 1)
-    i <- NULL
-    j <- NULL
-    if(sel == "i" && length(size1) > 0) {
-      w <- nrow(network_1)-length(unique_pl1)
-      if(w < nrow(network_1)) { w <- w+1 }
-      i <- as.numeric(sample(as.character(c((w):nrow(network_1))), 1))
-      #z <- ncol(network_1)-length(unique_in1)
-      j <- sample(seq_len(ncol(network_1)), 1)
-    } else if(sel == "j" && length(size2) > 0) {
-      #w <- nrow(network_1)-length(unique_pl1)
-      i <- sample(seq_len(nrow(network_1)), 1)
-      z <- ncol(network_1)-length(unique_in1)
-      if(z < ncol(network_1)) { z <- z+1 }
-      j <- as.numeric(sample(as.character(c((z):ncol(network_1))), 1))
-    }
-    if(!is.null(i) && !is.null(j)) {
-      if(network_1[i,j] == 0) {
-        network_1[i,j] <- 1
-        x <- x - 1
-      }
-    }
-  }
-  dim(network_1); sum(network_1)
-
-  # Añado las especies nuevas en la red 2 y relleno tantas interacciones como marca el valor "tur" (int_turnover)
-  if(!is.null(unique_pl2)) {
+  # Adding the unique species of network_2 and the interactions designated by "tur" (percentage of interactions due to species turnover)
+  if(length(unique_pl2) != 0) {
     x <- rep(0, ncol(network_2))
     for(i in seq_along(unique_pl2)) {
       network_2 <- rbind(network_2, x)
@@ -279,7 +302,7 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
     rownames(network_2) <- filas
   }
 
-  if(!is.null(unique_in2)) {
+  if(length(unique_in2) != 0) {
     x <- rep(0, nrow(network_2))
     for(i in seq_along(unique_in2)) {
       network_2 <- cbind(network_2, x)
@@ -293,66 +316,101 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
     colnames(network_2) <- columnas
   }
 
-  rownames(network_1) == rownames(network_2)
-  colnames(network_1) == colnames(network_2)
-
+  res <- tur
   size <- nrow(network_2)-length(unique_pl2)
   if(size < nrow(network_2)) {
     size1 <- ((size+1):nrow(network_2))
     for(k in size1) {
       i <- k
-      j <- sample(seq_len(ncol(network_2)), 1)
-      network_2[i,j] <- 1
+      continue <- "NO"
+      while(continue == "NO") {
+        j <- sample((ncol(network_2)-length(unique_in2)+1):ncol(network_2), 1)
+        if(sum(network_2[,j]) == 0) {
+          network_2[i,j] <- 1
+          continue <- "YES"
+          res <- res - 1
+        }
+      }
     }
   } else { size1 <- NULL }
 
   size <- ncol(network_2)-length(unique_in2)
+  colsum <- colSums(network_2)[(size+1):100]
+  pos <- NULL
+  if(0 %in% colsum) {
+    pos <- which(colsum == 0)
+  }
   if(size < ncol(network_2)) {
     size2 <- ((size+1):ncol(network_2))
-    for(k in size2) {
-      j <- k
-      l <- 1
-      while(l == 1) {
-        i <- sample(seq_len(nrow(network_2)), 1)
-        if(network_2[i,j] == 0){
-          network_2[i,j] <- 1
-          l <- 0
+    if(!is.null(pos)) {
+      continue <- "NO"
+      while(res > 0 || continue == "NO") {
+        for(k in pos) {
+          j <- k
+          l <- 1
+          while(l == 1) {
+            i <- sample(seq_len(nrow(network_2)), 1)
+            if(network_2[i,j] == 0){
+              network_2[i,j] <- 1
+              l <- 0
+              res <- res - 1
+            }
+          }
+          if(res == 0) {
+            break
+          }
         }
+        continue <- "YES"
+      }
+    }
+    continue <- "NO"
+    while(res > 0 || continue == "NO") {
+      for(k in size2) {
+        j <- sample(size2, 1)
+        l <- 1
+        while(l == 1) {
+          i <- sample(seq_len(nrow(network_2)), 1)
+          if(network_2[i,j] == 0){
+            network_2[i,j] <- 1
+            l <- 0
+            res <- res - 1
+          }
+        }
+        if(res == 0) {
+          break
+        }
+        continue <- "YES"
       }
     }
   } else { size2 <- NULL }
   dim(network_2); sum(network_2)
 
-  x <- tur-length(size1)-length(size2)
-  while(x != 0) {
-    sel <- sample(c("i","j"), 1)
-    i <- NULL
-    j <- NULL
-    if(sel == "i" && length(size1) > 0) {
-      w <- nrow(network_2)-length(unique_pl2)
-      if(w < nrow(network_2)) { w <- w+1 }
-      i <- as.numeric(sample(as.character(c((w):nrow(network_2))), 1))
-      #z <- ncol(network_2)-length(unique_in2)
-      j <- sample(seq_len(ncol(network_2)), 1)
-    } else if(sel == "j" && length(size2) > 0) {
-      #w <- nrow(network_2)-length(unique_pl2)
-      i <- sample(seq_len(nrow(network_2)), 1)
-      z <- ncol(network_2)-length(unique_in2)
-      if(z < ncol(network_2)) { z <- z+1 }
-      j <- as.numeric(sample(as.character(c((z):ncol(network_2))), 1))
-    }
-    if(!is.null(i) && !is.null(j)) {
-      if(network_2[i,j] == 0) {
-        network_2[i,j] <- 1
-        x <- x - 1
-      }
-    }
-  }
-  dim(network_2); sum(network_2)
+  # Creating lists of species in the community at time 1 and 2 (c1 and c2). c1 will be composed by the species in
+  # network_1 plus a number of the unique species of network_2 defined by sp_inis.
+  if(sp_inis == 0) {
+    c1 <- list(rownames(network_1), colnames(network_1))
+    c2 <- list(rownames(network_2), colnames(network_2))
+  } else {
+    pl1 <- rownames(network_1)
+    po1 <- colnames(network_1)
 
-  tot_net <- sum(abs(network_2-network_1))
-  c1 <- list(rownames(network_1), colnames(network_1))
-  c2 <- list(rownames(network_2), colnames(network_2))
+    pl2 <- rownames(network_2)
+    po2 <- colnames(network_2)
+
+    plu1 <- pl1[!pl1 %in% pl2]
+    plu2 <- pl2[!pl2 %in% pl1]
+    pl1 <- c(pl1, plu2[1:sp_inis])
+    pl2 <- c(pl2, plu1[1:sp_inis])
+
+    pou1 <- po1[!po1 %in% po2]
+    pou2 <- po2[!po2 %in% po1]
+    po1 <- c(po1, pou2[1:sp_inis])
+    po2 <- c(po2, pou1[1:sp_inis])
+
+    c1 <- list(pl1, po1)
+    c2 <- list(pl2, po2)
+  }
+
   networks <- list(network_1, network_2, c1, c2)
 
   corrected_shared <- sha+sha
@@ -362,12 +420,14 @@ network_modelling_comp <- function(lower = NULL, upper = NULL, sp_num = 100, int
   print(paste0("Total number of interaccions in both shared networks should be: ", corrected_shared, " interaccions in total"))
   print(paste0("Total number of interactions in both shared networks is: ", shared_total, " interactions in total"))
   print(paste0("Total number of rewired interactions should be: ", corrected_rew, " interactions in total"))
-  print(paste0("Total number of rewired interactions should is: ", shared_rew, " interactions in total"))
+  print(paste0("Total number of rewired interactions is: ", shared_rew, " interactions in total"))
   print(paste0("Total number of interaccions in both total networks should be: ", corrected_total, " interactions in total"))
   print(paste0("Total number of interaccions in both total networks is: ", sum(sum(network_1),sum(network_2)), " interactions in total"))
-  print(paste0("Interacciones totales de la red 1: ", sum(network_1)))
-  print(paste0("Interacciones totales de la red 2: ", sum(network_2)))
-  print(paste0("Especies totales de la red 1: ", nrow(network_1), " especies de plantas y ", ncol(network_1), " especies de insectos."))
-  print(paste0("Especies totales de la red 2: ", nrow(network_2), " especies de plantas y ", ncol(network_2), " especies de insectos."))
+  print(paste0("Total number of interactions in network 1: ", sum(network_1)))
+  print(paste0("Total number of interactions in network 2: ", sum(network_2)))
+  print(paste0("Total number of species in 1: ", nrow(network_1), " plant species and ", ncol(network_1), " insect species."))
+  print(paste0("Total number of species 2: ", nrow(network_2), " plant species and ", ncol(network_2), " insect species."))
   return(networks)
 }
+
+# END OF SCRIPT
