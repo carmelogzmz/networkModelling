@@ -4,6 +4,7 @@
 # Author: Carmelo Gomez-Martinez
 # Last update: 21/03/2024
 # contact: carmelogzmz@gmail.com
+# github: https://github.com/carmelogzmz/networkModelling/
 
 # DESCRIPTION
 # This function build a pair of networks with a defined structure according to the following parameters:
